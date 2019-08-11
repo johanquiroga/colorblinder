@@ -17,7 +17,8 @@ export default class Home extends Component {
   };
 
   onPlayPress = () => {
-    console.log('onPlayPress event handler');
+    const { navigation } = this.props;
+    navigation.navigate('Game');
   };
 
   onLeaderboardPress = () => {
