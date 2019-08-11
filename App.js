@@ -1,4 +1,5 @@
 import React, { Component } from 'react';
+import { StatusBar } from 'react-native';
 import { AppLoading } from 'expo';
 import * as Font from 'expo-font';
 
@@ -20,7 +21,12 @@ class App extends Component {
     if (!this.state.isFontLoaded) {
       return <AppLoading />;
     }
-    return <Routes />;
+    return (
+      <>
+        <StatusBar barStyle="light-content"></StatusBar>
+        <Routes />
+      </>
+    );
   }
 }
 
