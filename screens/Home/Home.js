@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import { View, Text, Image, TouchableOpacity } from 'react-native';
+import { Audio } from 'expo-av';
 
 import styles from './styles';
 
@@ -16,7 +17,61 @@ export default class Home extends Component {
     isSoundOn: true,
   };
 
+  async componentWillMount() {
+    const { navigation } = this.props;
+    this.backgroundMusic = new Audio.Sound();
+    this.buttonFX = new Audio.Sound();
+
+    await this.initializeMusic();
+
+    this.willFocusSubscription = navigation.addListener(
+      'willFocus',
+      async () => {
+        try {
+          this.initializeMusic(true);
+          // The sound is playing
+        } catch (err) {
+          // An error occurred
+          console.log(err);
+        }
+      }
+    );
+
+    this.willBlurSubscription = navigation.addListener('willBlur', async () => {
+      try {
+        await this.backgroundMusic.stopAsync();
+        // The sound is playing
+      } catch (err) {
+        // An error occurred
+        console.log(err);
+      }
+    });
+  }
+
+  componentWillUnmount() {
+    this.willFocusSubscription.remove();
+    this.willBlurSubscription.remove();
+  }
+
+  initializeMusic = async (replay = false) => {
+    try {
+      if (replay) {
+        await this.backgroundMusic.replayAsync();
+      } else {
+        await this.backgroundMusic.loadAsync(
+          require('../../assets/music/Komiku_Mushrooms.mp3')
+        );
+        await this.buttonFX.loadAsync(require('../../assets/sfx/button.wav'));
+        await this.backgroundMusic.setIsLoopingAsync(true);
+        await this.backgroundMusic.playAsync();
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
   onPlayPress = () => {
+    this.buttonFX.replayAsync();
     const { navigation } = this.props;
     navigation.navigate('Game');
   };

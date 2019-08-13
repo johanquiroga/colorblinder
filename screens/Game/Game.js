@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Dimensions, TouchableOpacity, Text, Image } from 'react-native';
+import { Audio } from 'expo-av';
 
 import { Header } from '../../components';
 
@@ -25,7 +26,17 @@ class Game extends React.Component {
     gameState: 'INGAME', // three possible states: 'INGAME', 'PAUSED' and 'LOST'
   };
 
-  componentWillMount() {
+  async componentWillMount() {
+    const { navigation } = this.props;
+
+    this.backgroundMusic = new Audio.Sound();
+    this.exitBtnFX = new Audio.Sound();
+    this.correctFX = new Audio.Sound();
+    this.incorrectFX = new Audio.Sound();
+    this.pauseFX = new Audio.Sound();
+    this.playFX = new Audio.Sound();
+    this.lostFX = new Audio.Sound();
+
     this.generateNewRound();
     this.interval = setInterval(() => {
       const { gameState } = this.state;
@@ -36,11 +47,64 @@ class Game extends React.Component {
         );
       }
     }, 1000);
+
+    await this.initializeMusic();
+
+    this.willFocusSubscription = navigation.addListener(
+      'willFocus',
+      async () => {
+        try {
+          this.initializeMusic(true);
+          // The sound is playing
+        } catch (err) {
+          // An error occurred
+          console.log(err);
+        }
+      }
+    );
+
+    this.willBlurSubscription = navigation.addListener('willBlur', async () => {
+      try {
+        await this.backgroundMusic.stopAsync();
+        // The sound is playing
+      } catch (err) {
+        // An error occurred
+        console.log(err);
+      }
+    });
   }
 
   componentWillUnmount() {
     clearInterval(this.interval);
+    this.willFocusSubscription.remove();
+    this.willBlurSubscription.remove();
   }
+
+  initializeMusic = async (replay = false) => {
+    try {
+      if (replay) {
+        await this.backgroundMusic.replayAsync();
+      } else {
+        await this.backgroundMusic.loadAsync(
+          require('../../assets/music/Komiku_BattleOfPogs.mp3')
+        );
+        await this.exitBtnFX.loadAsync(require('../../assets/sfx/button.wav'));
+        await this.correctFX.loadAsync(
+          require('../../assets/sfx/tile_tap.wav')
+        );
+        await this.incorrectFX.loadAsync(
+          require('../../assets/sfx/tile_wrong.wav')
+        );
+        await this.pauseFX.loadAsync(require('../../assets/sfx/pause_in.wav'));
+        await this.playFX.loadAsync(require('../../assets/sfx/pause_out.wav'));
+        await this.lostFX.loadAsync(require('../../assets/sfx/lose.wav'));
+        await this.backgroundMusic.setIsLoopingAsync(true);
+        await this.backgroundMusic.playAsync();
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  };
 
   generateSizeIndex = size => Math.floor(Math.random() * size);
 
@@ -64,6 +128,8 @@ class Game extends React.Component {
     const { gameState, timeLeft } = this.state;
     if (gameState === 'INGAME' && timeLeft <= 0) {
       this.setState({ gameState: 'LOST' });
+      this.backgroundMusic.stopAsync();
+      this.lostFX.replayAsync();
     }
   };
 
@@ -78,12 +144,14 @@ class Game extends React.Component {
         }),
         () => this.generateNewRound()
       );
+      this.correctFX.replayAsync();
     } else {
       // Wrong tile
       this.setState(
         prevState => ({ timeLeft: Math.max(prevState.timeLeft - 2, 0) }),
         () => this.setGameState()
       );
+      this.incorrectFX.replayAsync();
     }
   };
 
@@ -92,15 +160,18 @@ class Game extends React.Component {
     switch (gameState) {
       case 'INGAME':
         this.setState({ gameState: 'PAUSED' });
+        this.pauseFX.replayAsync();
         break;
       case 'PAUSED':
         this.setState({ gameState: 'INGAME' });
+        this.playFX.replayAsync();
         break;
       case 'LOST':
         this.setState({ points: 0, timeLeft: 15, size: 2 }, () => {
           this.generateNewRound();
           this.setState({ gameState: 'INGAME' });
         });
+        this.initializeMusic(true);
         break;
       default:
         break;
@@ -109,6 +180,7 @@ class Game extends React.Component {
 
   onExitPress = () => {
     const { navigation } = this.props;
+    this.exitBtnFX.replayAsync();
     navigation.goBack();
   };
 
