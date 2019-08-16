@@ -1,12 +1,25 @@
 import React from 'react';
-import { View, Dimensions, TouchableOpacity, Text, Image } from 'react-native';
+import {
+  View,
+  Dimensions,
+  TouchableOpacity,
+  Text,
+  Image,
+  Animated,
+} from 'react-native';
 import { Audio } from 'expo-av';
 
 import { Header } from '../../components';
 
 import styles from './styles';
 
-import { generateRGB, mutateRGB } from '../../utils';
+import {
+  generateRGB,
+  mutateRGB,
+  storeData,
+  retrieveData,
+  shakeAnimation,
+} from '../../utils';
 
 import bestPointsIcon from '../../assets/icons/trophy.png';
 import bestTimeIcon from '../../assets/icons/clock.png';
@@ -20,10 +33,13 @@ import exitIcon from '../../assets/icons/escape.png';
 class Game extends React.Component {
   state = {
     points: 0,
+    bestPoints: 0,
     timeLeft: 15,
+    bestTime: 0,
     rgb: generateRGB(),
     size: 2,
     gameState: 'INGAME', // three possible states: 'INGAME', 'PAUSED' and 'LOST'
+    shakeValue: new Animated.Value(0),
   };
 
   async componentWillMount() {
@@ -39,22 +55,39 @@ class Game extends React.Component {
 
     this.generateNewRound();
     this.interval = setInterval(() => {
-      const { gameState } = this.state;
+      const { gameState, points, bestPoints, timeLeft, bestTime } = this.state;
       if (gameState === 'INGAME') {
-        this.setState(
-          prevState => ({ timeLeft: Math.max(prevState.timeLeft - 1, 0) }),
-          () => this.setGameState()
-        );
+        if (timeLeft > bestTime) {
+          this.setState(prevState => ({ bestTime: prevState.timeLeft }));
+          storeData('bestTime', timeLeft);
+        }
+        if (timeLeft <= 0) {
+          this.backgroundMusic.stopAsync();
+          this.lostFX.replayAsync();
+          if (points > bestPoints) {
+            this.setState(prevState => ({ bestPoints: prevState.points }));
+            storeData('highScore', points);
+          }
+          this.setState({ gameState: 'LOST', timeLeft: 0 });
+        } else {
+          this.setState(prevState => ({
+            timeLeft: Math.max(prevState.timeLeft - 1, 0),
+          }));
+        }
       }
     }, 1000);
 
     await this.initializeMusic();
+    const highScore = await retrieveData('highScore');
+    const bestTime = await retrieveData('bestTime');
+    this.setState({ bestPoints: highScore || 0 });
+    this.setState({ bestTime: bestTime || 0 });
 
     this.willFocusSubscription = navigation.addListener(
       'willFocus',
       async () => {
         try {
-          this.initializeMusic(true);
+          this.backgroundMusic.replayAsync();
           // The sound is playing
         } catch (err) {
           // An error occurred
@@ -80,27 +113,21 @@ class Game extends React.Component {
     this.willBlurSubscription.remove();
   }
 
-  initializeMusic = async (replay = false) => {
+  initializeMusic = async () => {
     try {
-      if (replay) {
-        await this.backgroundMusic.replayAsync();
-      } else {
-        await this.backgroundMusic.loadAsync(
-          require('../../assets/music/Komiku_BattleOfPogs.mp3')
-        );
-        await this.exitBtnFX.loadAsync(require('../../assets/sfx/button.wav'));
-        await this.correctFX.loadAsync(
-          require('../../assets/sfx/tile_tap.wav')
-        );
-        await this.incorrectFX.loadAsync(
-          require('../../assets/sfx/tile_wrong.wav')
-        );
-        await this.pauseFX.loadAsync(require('../../assets/sfx/pause_in.wav'));
-        await this.playFX.loadAsync(require('../../assets/sfx/pause_out.wav'));
-        await this.lostFX.loadAsync(require('../../assets/sfx/lose.wav'));
-        await this.backgroundMusic.setIsLoopingAsync(true);
-        await this.backgroundMusic.playAsync();
-      }
+      await this.backgroundMusic.loadAsync(
+        require('../../assets/music/Komiku_BattleOfPogs.mp3')
+      );
+      await this.exitBtnFX.loadAsync(require('../../assets/sfx/button.wav'));
+      await this.correctFX.loadAsync(require('../../assets/sfx/tile_tap.wav'));
+      await this.incorrectFX.loadAsync(
+        require('../../assets/sfx/tile_wrong.wav')
+      );
+      await this.pauseFX.loadAsync(require('../../assets/sfx/pause_in.wav'));
+      await this.playFX.loadAsync(require('../../assets/sfx/pause_out.wav'));
+      await this.lostFX.loadAsync(require('../../assets/sfx/lose.wav'));
+      await this.backgroundMusic.setIsLoopingAsync(true);
+      await this.backgroundMusic.playAsync();
     } catch (e) {
       console.log(e);
     }
@@ -125,16 +152,20 @@ class Game extends React.Component {
   };
 
   setGameState = () => {
-    const { gameState, timeLeft } = this.state;
+    const { gameState, timeLeft, points, bestPoints } = this.state;
     if (gameState === 'INGAME' && timeLeft <= 0) {
-      this.setState({ gameState: 'LOST' });
       this.backgroundMusic.stopAsync();
       this.lostFX.replayAsync();
+      if (points > bestPoints) {
+        this.setState({ bestPoints: points });
+        storeData('highScore', points);
+      }
+      this.setState({ gameState: 'LOST' });
     }
   };
 
   onTilePress = (rowIndex, columnIndex) => {
-    const { diffTileIndex } = this.state;
+    const { diffTileIndex, shakeValue } = this.state;
     if (rowIndex === diffTileIndex[0] && columnIndex === diffTileIndex[1]) {
       // Good tile
       this.setState(
@@ -147,10 +178,10 @@ class Game extends React.Component {
       this.correctFX.replayAsync();
     } else {
       // Wrong tile
-      this.setState(
-        prevState => ({ timeLeft: Math.max(prevState.timeLeft - 2, 0) }),
-        () => this.setGameState()
-      );
+      shakeAnimation(shakeValue);
+      this.setState(prevState => ({
+        timeLeft: Math.max(prevState.timeLeft - 2, 0),
+      }));
       this.incorrectFX.replayAsync();
     }
   };
@@ -171,7 +202,7 @@ class Game extends React.Component {
           this.generateNewRound();
           this.setState({ gameState: 'INGAME' });
         });
-        this.initializeMusic(true);
+        this.backgroundMusic.replayAsync();
         break;
       default:
         break;
@@ -191,8 +222,11 @@ class Game extends React.Component {
       diffTileIndex,
       diffTileColor,
       points,
+      bestPoints,
       timeLeft,
+      bestTime,
       gameState,
+      shakeValue,
     } = this.state;
     const { width } = Dimensions.get('window');
     let bottomIcon;
@@ -209,11 +243,12 @@ class Game extends React.Component {
           <Header />
         </View>
         <View style={{ flex: 5, justifyContent: 'center' }}>
-          <View
+          <Animated.View
             style={{
               height: width * 0.875,
               width: width * 0.875,
               flexDirection: 'row',
+              left: shakeValue,
             }}
           >
             {gameState === 'INGAME' ? (
@@ -266,7 +301,7 @@ class Game extends React.Component {
                 </TouchableOpacity>
               </View>
             )}
-          </View>
+          </Animated.View>
         </View>
         <View style={{ flex: 2 }}>
           <View style={styles.bottomContainer}>
@@ -275,7 +310,7 @@ class Game extends React.Component {
               <Text style={styles.counterLabel}>points</Text>
               <View style={styles.bestContainer}>
                 <Image source={bestPointsIcon} style={styles.bestIcon}></Image>
-                <Text style={styles.bestLabel}>0</Text>
+                <Text style={styles.bestLabel}>{bestPoints}</Text>
               </View>
             </View>
             <View style={styles.bottomSectionContainer}>
@@ -291,7 +326,7 @@ class Game extends React.Component {
               <Text style={styles.counterLabel}>seconds left</Text>
               <View styles={styles.bestContainer}>
                 <Image source={bestTimeIcon} style={styles.bestIcon}></Image>
-                <Text style={styles.bestLabel}>0</Text>
+                <Text style={styles.bestLabel}>{bestTime}</Text>
               </View>
             </View>
           </View>
