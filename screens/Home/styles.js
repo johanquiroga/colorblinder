@@ -18,7 +18,7 @@ export default StyleSheet.create({
     width: 60,
     marginRight: 15,
   },
-  hiscore: {
+  highScore: {
     fontSize: 28.5,
     fontFamily: 'dogbyte',
     color: '#ecf0f1',
